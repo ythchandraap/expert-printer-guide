@@ -1,11 +1,11 @@
 const { app, BrowserWindow, ipcMain, session } = require("electron");
 const path = require("path");
 const { createServer } = require("http");
-const os = require("os");
 const { Server } = require("socket.io");
 const { writeFile, existsSync, mkdirSync, readFileSync } = require("fs");
 
 const { print } = require("pdf-to-printer");
+const { getPrinterStatus } = require("./renderer/apps/get-printer-status");
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -150,7 +150,8 @@ io.on("connection", (socket) => {
             printWindow = new BrowserWindow({
               width: 800,
               height: 600,
-              show: process.env.MODE == "DEVELOPMENT" ? true : false,
+              show: false,
+              // process.env.MODE == "DEVELOPMENT" ? true : true,
               webPreferences: {
                 preload: path.join(__dirname, "preload.js"),
                 nodeIntegration: false,
@@ -207,7 +208,7 @@ const createWindow = () => {
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer/index.html"));
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 };
 
 app.whenReady().then(() => {
@@ -284,6 +285,7 @@ app.on("window-all-closed", () => {
 // Function
 
 function getLocalIPAddress() {
+  const os = require("os");
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
     for (const net of nets[name] || []) {
@@ -318,34 +320,8 @@ function detectOSInElectron() {
   }
 }
 
-function getPrinterStatus(operating, statusCode) {
-  const system = operating ?? os;
-
-  if (system === "Windows") {
-    if ([2, 4, 8, 16, 32, 64, 128].includes(statusCode)) return "Error";
-    if (statusCode === 0) return "Success";
-    if (statusCode === 3) return "Not Connected";
-    return "Unknown";
-  }
-
-  if (system === "macOS") {
-    if (statusCode === 0) return "Success";
-    if ([4, 5].includes(statusCode)) return "Error";
-    if (statusCode === 3) return "Not Connected";
-    return "Unknown";
-  }
-
-  if (system === "Linux") {
-    if (statusCode === 3) return "Idle";
-    if (statusCode === 4) return "Success";
-    if (statusCode === 5) return "Error";
-    return "Unknown";
-  }
-
-  return "Unknown"; // For unsupported operating systems
-}
-
 function getFilePath() {
+  const os = require("os");
   const newBuild = path.join(os.homedir(), "Documents");
   const newBuildApps = path.join(os.homedir(), "Documents", "printer");
 
@@ -387,6 +363,118 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
   // Extract canvas data from the print window
   const pageCanvases = await printContainer.executeJavaScript(`
         [...document.querySelectorAll("canvas")].map(canvas => ({
+            data: canvas.toDataURL("image/png", 1.0), // Use highest quality
+            width: canvas.width,
+            height: canvas.height
+        }))
+    `);
+
+  // Constants for unit conversion
+  const INCH = 25.4; // 1 inch = 25.4 mm
+  const MICRON_TO_MM = 1000;
+  const originalDPI = 850; // Original high-resolution DPI
+  const targetDPI = 203; // Set printing DPI to 300 for better quality
+
+  // Clear the print window and set up styles
+  await printContainer.executeJavaScript(`
+        document.body.innerHTML = "";
+        document.body.style.margin = "0";
+        document.body.style.padding = "0";
+        document.body.style.display = "block";
+
+        const style = document.createElement("style");
+        style.innerHTML = \`
+            @media print {
+                canvas {
+                    page-break-after: always;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+                canvas:last-child {
+                    page-break-after: auto !important;
+                }
+            }
+        \`;
+        document.head.appendChild(style);
+    `);
+
+  let originalWidthMM = 0;
+  let originalHeightMM = 0;
+  for (const { data, width, height } of pageCanvases) {
+    // Convert to mm
+    originalWidthMM = (width * INCH) / originalDPI;
+    originalHeightMM = (height * INCH) / originalDPI;
+
+    // Adjust pixel size for high DPI printing
+    const highResWidth = ((originalWidthMM * targetDPI) / INCH) * 0.9;
+    const highResHeight = ((originalHeightMM * targetDPI) / INCH) * 0.9;
+
+    console.log(`Canvas - Original Size: ${width}px x ${height}px`);
+    console.log(
+      `Canvas - Scaled for Print: ${highResWidth}px x ${highResHeight}px`
+    );
+    console.log(
+      `Canvas - Physical Size: ${originalWidthMM - 2}mm x ${
+        originalHeightMM - 2
+      }mm`
+    );
+
+    // Render high-resolution canvas
+    await printContainer.executeJavaScript(`
+        new Promise((resolve, reject) => {
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+
+            // Set high resolution for printing
+            canvas.width = ${highResWidth};
+            canvas.height = ${highResHeight};
+            canvas.style.width = "${originalWidthMM - 2}mm";
+            canvas.style.height = "${originalHeightMM - 2}mm";
+            canvas.style.display = "block";
+            canvas.style.margin = "0";
+            canvas.style.padding = "0";
+
+            // Enable high-quality rendering
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+
+            const img = new Image();
+            img.src = "${data}";
+            img.onload = () => {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                document.body.appendChild(canvas);
+                resolve();
+            };
+            img.onerror = reject;
+        });
+    `);
+  }
+
+  // Print the content with high-resolution settings
+  await printContainer.print({
+    silent: true,
+    printBackground: true,
+    deviceName: printerName,
+    pageSize: {
+      width: (originalWidthMM - 2) * MICRON_TO_MM,
+      height: (originalHeightMM - 2) * MICRON_TO_MM,
+    },
+    margins: {
+      marginType: "none", // Ensure no extra margins
+    },
+    dpi: targetDPI, // Use 300 DPI for sharper print quality
+  });
+
+  console.log("✅ High-quality print completed.");
+}
+
+async function printCanvasForPaperPrinter(printWindow, printerName) {
+  const printContainer = printWindow.webContents;
+  console.log(`🖨️ Printing on paper printer: ${printerName}`);
+
+  // Extract canvas data from the print window
+  const pageCanvases = await printContainer.executeJavaScript(`
+        [...document.querySelectorAll("canvas")].map(canvas => ({
             data: canvas.toDataURL("image/png"),
             width: canvas.width,
             height: canvas.height
@@ -394,8 +482,9 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
     `);
 
   // Constants for unit conversion
-  const INCH_TO_MICRON = 25400;
+  const INCH = 25.4;
   const MICRON_TO_MM = 1000;
+  const originalDPI = 850;
   const dpiValue = 203; // Higher DPI for paper printers
 
   // Clear the print window and set up styles
@@ -421,21 +510,11 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
         document.head.appendChild(style);
     `);
 
-  let maxWidthMicrons = 0;
-  let maxHeightMicrons = 0;
+  let originalWidth = 0;
+  let originalHeight = 0;
   for (const { data, width, height } of pageCanvases) {
-    const widthMicrons = Math.round((width / dpiValue) * INCH_TO_MICRON);
-    const heightMicrons = Math.round((height / dpiValue) * INCH_TO_MICRON);
-    maxWidthMicrons = Math.max(maxWidthMicrons, widthMicrons);
-    maxHeightMicrons = Math.max(maxHeightMicrons, heightMicrons);
-
-    const finalWidthMM = widthMicrons / MICRON_TO_MM;
-    const finalHeightMM = heightMicrons / MICRON_TO_MM;
-
-    console.log(`Canvas - Width: ${width}px, Height: ${height}px`);
-    console.log(
-      `Canvas - Display Width: ${finalWidthMM}mm, Display Height: ${finalHeightMM}mm`
-    );
+    originalWidth = (width * INCH) / originalDPI;
+    originalHeight = (height * INCH) / originalDPI;
 
     // Render each canvas directly in the print window
     await printContainer.executeJavaScript(`
@@ -443,8 +522,8 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
                 const canvas = document.createElement("canvas");
                 canvas.width = ${width};
                 canvas.height = ${height};
-                canvas.style.width = "${finalWidthMM}mm";
-                canvas.style.height = "${finalHeightMM}mm";
+                canvas.style.width = "${originalWidth}mm";
+                canvas.style.height = "${originalHeight}mm";
                 canvas.style.display = "block";
                 canvas.style.margin = "0";
                 canvas.style.padding = "0";
@@ -462,125 +541,19 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
         `);
   }
 
-  console.log(
-    `Max Width: ${maxWidthMicrons} microns, Max Height: ${maxHeightMicrons} microns`
-  );
-
   // Print the content with the calculated page size
   await printContainer.print({
     silent: true, // Allow print dialog for user preferences
     printBackground: true,
     deviceName: printerName,
     pageSize: {
-      width: maxWidthMicrons,
-      height: maxHeightMicrons,
+      width: originalWidth * MICRON_TO_MM,
+      height: originalHeight * MICRON_TO_MM,
     },
     margins: {
       marginType: "none", // Ensure no extra margins
     },
-  });
-
-  console.log("✅ All pages printed.");
-}
-
-async function printCanvasForPaperPrinter(printWindow, printerName) {
-  const printContainer = printWindow.webContents;
-  console.log(`🖨️ Printing on paper printer: ${printerName}`);
-
-  // Extract canvas data from the print window
-  const pageCanvases = await printContainer.executeJavaScript(`
-        [...document.querySelectorAll("canvas")].map(canvas => ({
-            data: canvas.toDataURL("image/png"),
-            width: canvas.width,
-            height: canvas.height
-        }))
-    `);
-
-  // Constants for unit conversion
-  const INCH_TO_MICRON = 25400;
-  const MICRON_TO_MM = 1000;
-  const dpiValue = 300; // Higher DPI for paper printers
-
-  // Clear the print window and set up styles
-  await printContainer.executeJavaScript(`
-        document.body.innerHTML = "";
-        document.body.style.margin = "0";
-        document.body.style.padding = "0";
-        document.body.style.display = "block";
-
-        const style = document.createElement("style");
-        style.innerHTML = \`
-            @media print {
-                canvas {
-                    page-break-after: always;
-                    margin: 0 !important;
-                    padding: 0 !important;
-                }
-                canvas:last-child {
-                    page-break-after: auto !important;
-                }
-            }
-        \`;
-        document.head.appendChild(style);
-    `);
-
-  let maxWidthMicrons = 0;
-  let maxHeightMicrons = 0;
-  for (const { data, width, height } of pageCanvases) {
-    const widthMicrons = Math.round((width / dpiValue) * INCH_TO_MICRON);
-    const heightMicrons = Math.round((height / dpiValue) * INCH_TO_MICRON);
-    maxWidthMicrons = Math.max(maxWidthMicrons, widthMicrons);
-    maxHeightMicrons = Math.max(maxHeightMicrons, heightMicrons);
-
-    const finalWidthMM = widthMicrons / MICRON_TO_MM;
-    const finalHeightMM = heightMicrons / MICRON_TO_MM;
-
-    console.log(`Canvas - Width: ${width}px, Height: ${height}px`);
-    console.log(
-      `Canvas - Display Width: ${finalWidthMM}mm, Display Height: ${finalHeightMM}mm`
-    );
-
-    // Render each canvas directly in the print window
-    await printContainer.executeJavaScript(`
-            new Promise((resolve, reject) => {
-                const canvas = document.createElement("canvas");
-                canvas.width = ${width};
-                canvas.height = ${height};
-                canvas.style.width = "${finalWidthMM}mm";
-                canvas.style.height = "${finalHeightMM}mm";
-                canvas.style.display = "block";
-                canvas.style.margin = "0";
-                canvas.style.padding = "0";
-
-                const ctx = canvas.getContext("2d");
-                const img = new Image();
-                img.src = "${data}";
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0, ${width}, ${height});
-                    document.body.appendChild(canvas);
-                    resolve();
-                };
-                img.onerror = reject;
-            });
-        `);
-  }
-
-  console.log(
-    `Max Width: ${maxWidthMicrons} microns, Max Height: ${maxHeightMicrons} microns`
-  );
-
-  // Print the content with the calculated page size
-  await printContainer.print({
-    silent: true, // Allow print dialog for user preferences
-    printBackground: true,
-    deviceName: printerName,
-    pageSize: {
-      width: maxWidthMicrons,
-      height: maxHeightMicrons,
-    },
-    margins: {
-      marginType: "none", // Ensure no extra margins
-    },
+    dpi: 850,
   });
 
   console.log("✅ All pages printed.");

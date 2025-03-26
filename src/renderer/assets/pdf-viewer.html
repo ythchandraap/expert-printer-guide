@@ -1,71 +1,8 @@
-<!--
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <title>PDF Viewer</title>
-    <script type="module">
-      import * as pdfjsLib from "./build/pdf.mjs";
-
-      // Set worker source for PDF.js
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "./build/pdf.worker.mjs";
-
-      document.addEventListener("DOMContentLoaded", async () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const pdfUrl = urlParams.get("file");
-
-        if (!pdfUrl) {
-          console.error("🚨 No PDF file specified.");
-          return;
-        }
-
-        try {
-          const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-          const container = document.getElementById("pdf-container");
-
-          // Define the desired DPI (e.g., 300 DPI)
-          const desiredDPI = 300;
-          const defaultDPI = 72; // PDF.js default DPI
-
-          // Calculate the scale factor to achieve the desired DPI
-          const scale = desiredDPI / defaultDPI;
-
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-
-            // Get original PDF dimensions
-            const viewport = page.getViewport({ scale: 1 });
-
-            // Create canvas for each page
-            const canvas = document.createElement("canvas");
-            canvas.id = `pdf-canvas-${pageNum}`;
-            const context = canvas.getContext("2d");
-
-            // Set canvas internal resolution to match the desired DPI
-            canvas.width = viewport.width * scale;
-            canvas.height = viewport.height * scale;
-
-            // Set display size to match PDF's original dimensions (1:1)
-            canvas.style.width = `${viewport.width}px`;
-            canvas.style.height = `${viewport.height}px`;
-
-            container.appendChild(canvas);
-
-            // Render PDF page into canvas at the higher resolution
-            const scaledViewport = page.getViewport({ scale });
-            await page.render({
-              canvasContext: context,
-              viewport: scaledViewport,
-            }).promise;
-            console.log(
-              `✅ Page ${pageNum} rendered successfully at ${desiredDPI} DPI.`
-            );
-          }
-        } catch (error) {
-          console.error("❌ Error loading PDF:", error);
-        }
-      });
-    </script>
     <style>
       body {
         margin: 0;
@@ -82,31 +19,20 @@
         flex-direction: column;
         align-items: center;
       }
-      canvas {
-        display: block;
-        background-color: white;
-      }
     </style>
   </head>
   <body>
     <h1>📄 PDF Viewer</h1>
     <div id="pdf-container"></div>
 
-    <script>
+    <!-- <script>
       window.addEventListener("load", () => {
         setTimeout(() => {
           window.electronAPI?.printFromViewer?.();
         }, 500);
       });
-    </script>
-  </body>
-</html> -->
+    </script> -->
 
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>PDF Viewer</title>
     <script type="module">
       import * as pdfjsLib from "./build/pdf.mjs";
 
@@ -128,10 +54,13 @@
 
           // Define the desired DPI (e.g., 300 DPI)
           const desiredDPI = 300;
-          const defaultDPI = 72; // PDF.js default DPI
+          const defaultDPI = 92; // PDF.js default DPI
+          const inch = 25.4;
+
+          let renderPromises = [];
 
           // Calculate the scale factor to achieve the desired DPI
-          const scale = desiredDPI / defaultDPI;
+          const exactSize = desiredDPI / inch;
 
           for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
             const page = await pdf.getPage(pageNum);
@@ -145,12 +74,15 @@
             const context = canvas.getContext("2d");
 
             // Set canvas internal resolution to match the desired DPI
-            canvas.width = viewport.width * scale;
-            canvas.height = viewport.height * scale;
+
+            const exactWidth = viewport.width * exactSize;
+            const exactHeight = viewport.height * exactSize;
+            canvas.width = exactWidth;
+            canvas.height = exactHeight;
 
             // Set display size to match PDF's original dimensions (1:1)
-            canvas.style.width = `${viewport.width}px`;
-            canvas.style.height = `${viewport.height}px`;
+            canvas.style.width = `${exactWidth}px`;
+            canvas.style.height = `${exactHeight}px`;
             canvas.style.display = "block";
             canvas.style.marginBottom = "10px"; // Add spacing between pages
             canvas.style.backgroundColor = "white"; // Set background color
@@ -158,47 +90,21 @@
             container.appendChild(canvas);
 
             // Render PDF page into canvas at the higher resolution
-            const scaledViewport = page.getViewport({ scale });
-            await page.render({
+            const scaledViewport = page.getViewport({ scale: exactSize });
+            const renderTask = await page.render({
               canvasContext: context,
               viewport: scaledViewport,
             }).promise;
-            console.log(
-              `✅ Page ${pageNum} rendered successfully at ${desiredDPI} DPI.`
-            );
+            renderPromises.push(renderTask);
           }
+          await Promise.all(renderPromises);
+          console.log("✅ All canvases are fully loaded.");
+
+          // Now call the Electron API
+          window.electronAPI?.printFromViewer?.();
         } catch (error) {
           console.error("❌ Error loading PDF:", error);
         }
-      });
-    </script>
-    <style>
-      body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-        background-color: #f5f5f5;
-      }
-      #pdf-container {
-        width: fit-content;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>📄 PDF Viewer</h1>
-    <div id="pdf-container"></div>
-
-    <script>
-      window.addEventListener("load", () => {
-        setTimeout(() => {
-          window.electronAPI?.printFromViewer?.();
-        }, 500);
       });
     </script>
   </body>
