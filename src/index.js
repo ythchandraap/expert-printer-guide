@@ -1,4 +1,11 @@
-const { app, BrowserWindow, ipcMain, session } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  session,
+  Menu,
+  Tray,
+} = require("electron");
 const path = require("path");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
@@ -18,8 +25,10 @@ const io = new Server(httpServer, {
 
 let mainWindow;
 let printWindow;
-let realPrintWindow;
+let alternativePrintWindow;
 let printName = "";
+
+let tray;
 
 io.on("connection", (socket) => {
   // Kirim IP saat client meminta
@@ -209,6 +218,20 @@ const createWindow = () => {
 
   mainWindow.loadFile(path.join(__dirname, "renderer/index.html"));
   // mainWindow.webContents.openDevTools();
+
+  tray = new Tray(path.join(__dirname, "./images/tray.png")); // Your tray icon
+  const contextMenu = Menu.buildFromTemplate([
+    { label: "Show App", click: () => mainWindow.show() },
+    { label: "Quit", click: () => app.quit() },
+  ]);
+
+  tray.setToolTip("Expert Guide Printer");
+  tray.setContextMenu(contextMenu);
+
+  mainWindow.on("close", (event) => {
+    event.preventDefault();
+    mainWindow.hide();
+  });
 };
 
 app.whenReady().then(() => {
@@ -290,7 +313,9 @@ function getLocalIPAddress() {
   for (const name of Object.keys(nets)) {
     for (const net of nets[name] || []) {
       if (net.family === "IPv4" && !net.internal) {
-        return net.address;
+        if (!net.address.endsWith(".1")) {
+          return net.address;
+        }
       }
     }
   }

@@ -1,4 +1,4 @@
-export function getPrinterStatus(operating, statusCode) {
+function getPrinterStatus(operating, statusCode) {
   const system = operating ?? os;
 
   if (system === "Windows") {
@@ -24,3 +24,5 @@ export function getPrinterStatus(operating, statusCode) {
 
   return "Unknown"; // For unsupported operating systems
 }
+
+module.exports = { getPrinterStatus };

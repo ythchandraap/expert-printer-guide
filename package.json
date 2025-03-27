@@ -1,6 +1,6 @@
 {
-  "name": "new-printer",
-  "productName": "new-printer",
+  "name": "epg",
+  "productName": "Expert Printer Guide",
   "version": "1.0.0",
   "description": "My Electron application description",
   "main": "src/index.js",
@@ -26,7 +26,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.7.0",
+    "@electron-forge/cli": "^7.8.0",
     "@electron-forge/maker-deb": "^7.7.0",
     "@electron-forge/maker-rpm": "^7.7.0",
     "@electron-forge/maker-squirrel": "^7.7.0",
@@ -39,6 +39,7 @@
   "build": {
     "appId": "com.example.yourapp",
     "mac": {
+      "icon": "src/images/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         "dmg",
@@ -46,6 +47,7 @@
       ]
     },
     "win": {
+      "icon": "src/images/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -54,8 +56,13 @@
             "x64"
           ]
         }
-      ],
-      "icon": "build/icon.ico"
+      ]
     }
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "electron",
+      "electron-winstaller"
+    ]
   }
 }
