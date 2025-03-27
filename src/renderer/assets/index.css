@@ -1,25 +1,26 @@
+html,
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
-  margin: auto;
-  max-width: 38rem;
-  padding: 2rem;
+  margin: 0;
+  /* overflow-x: hidden; */
 }
 
 .wrapper-search {
   position: absolute;
   background-color: white;
-  display: flex;
   align-content: center;
   gap: 0.5rem;
 }
 .wrapper-search.in {
   transform: translate(-90%, 0%);
+  display: flex;
   animation-name: in;
   animation-duration: 0.4s;
   opacity: 100;
 }
 .wrapper-search.out {
+  display: none;
   transform: translate(100%, 0%);
   animation-name: out;
   animation-duration: 0.4s;
