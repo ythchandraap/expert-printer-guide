@@ -12,7 +12,10 @@ const { Server } = require("socket.io");
 const { writeFile, existsSync, mkdirSync, readFileSync } = require("fs");
 
 const { print } = require("pdf-to-printer");
-const { getPrinterStatus } = require("./renderer/apps/get-printer-status");
+// const { getPrinterStatus } = require("./apps/get-printer-status");
+// const { getFilePath } = require("./apps/get-file-path");
+// const { detectOSInElectron } = require("./apps/detect-os");
+// const { getLocalIPAddress } = require("./apps/get-local-ip");
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -202,6 +205,7 @@ io.on("connection", (socket) => {
 });
 
 if (require("electron-squirrel-startup")) {
+  tray.destroy();
   app.quit();
 }
 
@@ -222,7 +226,14 @@ const createWindow = () => {
   tray = new Tray(path.join(__dirname, "./images/tray.png")); // Your tray icon
   const contextMenu = Menu.buildFromTemplate([
     { label: "Show App", click: () => mainWindow.show() },
-    { label: "Quit", click: () => app.quit() },
+    {
+      label: "Quit",
+      click: () => {
+        httpServer.close();
+        tray.destroy();
+        app.quit();
+      },
+    },
   ]);
 
   tray.setToolTip("Expert Guide Printer");
@@ -282,10 +293,6 @@ app.whenReady().then(() => {
 
   ipcMain.handle("get-ip", () => getLocalIPAddress());
 
-  ipcMain.on("ping", (event) => {
-    event.reply("pong");
-  });
-
   ipcMain.handle("list-printer", async (event) => {
     if (mainWindow) {
       const printers = await mainWindow.webContents.getPrintersAsync();
@@ -306,80 +313,6 @@ app.on("window-all-closed", () => {
 });
 
 // Function
-
-function getLocalIPAddress() {
-  const os = require("os");
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] || []) {
-      if (net.family === "IPv4" && !net.internal) {
-        if (!net.address.endsWith(".1")) {
-          return net.address;
-        }
-      }
-    }
-  }
-  return "127.0.0.1";
-}
-
-function detectOSInElectron() {
-  const platform = process.platform;
-
-  switch (platform) {
-    case "win32":
-      return "Windows";
-    case "darwin":
-      return "macOS";
-    case "linux":
-      return "Linux";
-    case "freebsd":
-      return "FreeBSD";
-    case "openbsd":
-      return "OpenBSD";
-    case "sunos":
-      return "SunOS";
-    case "aix":
-      return "AIX";
-    default:
-      return "Unknown OS";
-  }
-}
-
-function getFilePath() {
-  const os = require("os");
-  const newBuild = path.join(os.homedir(), "Documents");
-  const newBuildApps = path.join(os.homedir(), "Documents", "printer");
-
-  switch (process.platform) {
-    case "win32":
-      if (!existsSync(newBuild)) {
-        mkdirSync(newBuild);
-      }
-      if (!existsSync(newBuildApps)) {
-        mkdirSync(newBuildApps);
-      }
-      return path.join(newBuildApps); // Windows
-    case "darwin":
-      if (!existsSync(newBuild)) {
-        mkdirSync(newBuild);
-      }
-
-      if (!existsSync(newBuildApps)) {
-        mkdirSync(newBuildApps);
-      }
-      return path.join(newBuildApps); // macOS
-    case "linux":
-      if (!existsSync(newBuild)) {
-        mkdirSync(newBuild);
-      }
-      if (!existsSync(newBuildApps)) {
-        mkdirSync(newBuildApps);
-      }
-      return path.join(newBuildApps); // Linux
-    default:
-      throw new Error("Unsupported OS");
-  }
-}
 
 async function printCanvasForLabelPrinter(printWindow, printerName) {
   const printContainer = printWindow.webContents;
@@ -607,4 +540,106 @@ async function printEachCanvas(printWindow, printerName) {
     console.log("🖨️ Detected as Paper Printer");
     await printCanvasForPaperPrinter(printWindow, printerName);
   }
+}
+
+function detectOSInElectron() {
+  const platform = process.platform;
+
+  switch (platform) {
+    case "win32":
+      return "Windows";
+    case "darwin":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    case "freebsd":
+      return "FreeBSD";
+    case "openbsd":
+      return "OpenBSD";
+    case "sunos":
+      return "SunOS";
+    case "aix":
+      return "AIX";
+    default:
+      return "Unknown OS";
+  }
+}
+
+function getFilePath() {
+  const os = require("os");
+  const path = require("path");
+  const newBuild = path.join(os.homedir(), "Documents");
+  const newBuildApps = path.join(os.homedir(), "Documents", "printer");
+
+  switch (process.platform) {
+    case "win32":
+      if (!existsSync(newBuild)) {
+        mkdirSync(newBuild);
+      }
+      if (!existsSync(newBuildApps)) {
+        mkdirSync(newBuildApps);
+      }
+      return path.join(newBuildApps); // Windows
+    case "darwin":
+      if (!existsSync(newBuild)) {
+        mkdirSync(newBuild);
+      }
+
+      if (!existsSync(newBuildApps)) {
+        mkdirSync(newBuildApps);
+      }
+      return path.join(newBuildApps); // macOS
+    case "linux":
+      if (!existsSync(newBuild)) {
+        mkdirSync(newBuild);
+      }
+      if (!existsSync(newBuildApps)) {
+        mkdirSync(newBuildApps);
+      }
+      return path.join(newBuildApps); // Linux
+    default:
+      throw new Error("Unsupported OS");
+  }
+}
+
+function getLocalIPAddress() {
+  const os = require("os");
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === "IPv4" && !net.internal) {
+        if (!net.address.endsWith(".1")) {
+          return net.address;
+        }
+      }
+    }
+  }
+  return "127.0.0.1";
+}
+
+function getPrinterStatus(operating, statusCode) {
+  const system = operating ?? os;
+
+  if (system === "Windows") {
+    if ([2, 4, 8, 16, 32, 64, 128].includes(statusCode)) return "Error";
+    if (statusCode === 0) return "Success";
+    if (statusCode === 3) return "Not Connected";
+    return "Unknown";
+  }
+
+  if (system === "macOS") {
+    if (statusCode === 0) return "Success";
+    if ([4, 5].includes(statusCode)) return "Error";
+    if (statusCode === 3) return "Not Connected";
+    return "Unknown";
+  }
+
+  if (system === "Linux") {
+    if (statusCode === 3) return "Idle";
+    if (statusCode === 4) return "Success";
+    if (statusCode === 5) return "Error";
+    return "Unknown";
+  }
+
+  return "Unknown"; // For unsupported operating systems
 }
