@@ -3,108 +3,120 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hello World!</title>
+    <title>fxPrint</title>
     <link rel="stylesheet" href="./assets/index.css" />
   </head>
   <body
     style="
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: start;
       flex-direction: column;
       max-width: 100vw;
       padding: 1rem;
     "
   >
-    <div style="display: flex; flex-direction: column; width: 100%">
-      <div class="" style="position: relative; width: 100%">
-        <div class="" style="position: absolute"></div>
-      </div>
+    <div style="max-width: 360px">
       <div
         style="
+          display: flex;
+          flex-direction: column;
           width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        "
-      >
-        <h1>🚧 Hello World!</h1>
-
-        <div
-          style="
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.5rem;
-            size: 20px;
-            font-size: large;
-          "
-        >
-          <button id="search-ip">🔎</button>
-          <button>⚙️</button>
-
-          <div class="wrapper-search out">
-            <input
-              type="text"
-              name=""
-              id="input-ip"
-              style="
-                padding: 0.625rem 0.75rem;
-                border-radius: 1rem;
-                outline: transparent;
-                font-size: 20px;
-                border: #eaeaea solid 1px;
-              "
-            />
-            <button style="padding: 0.75rem 0.75rem" id="connect-ip">🚀</button>
-            <button style="padding: 0.75rem 0.75rem" id="close-ip">❌</button>
-          </div>
-        </div>
-      </div>
-
-      <p>Your IP Address : <span id="ip-display"></span>.</p>
-      <hr />
-
-      <div
-        class="list-wrapper"
-        style="
-          position: relative;
-          display: flex;
-          gap: 0.5rem;
-          border-radius: 1rem;
           padding: 1rem;
         "
       >
-        <input type="file" id="fileInput" style="width: 100%" />
-        <button
+        <div class="" style="position: relative; width: 100%">
+          <div class="" style="position: absolute"></div>
+        </div>
+        <div
           style="
-            position: absolute;
-            top: 50%;
-            bottom: 50%;
-            right: 0.5rem;
-            padding: 0.5rem 0.75rem;
-            transform: translate(0, -50%);
-            height: fit-content;
-            border-radius: 1rem;
-            border-color: transparent;
-            background-color: bisque;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
           "
-          id="buttonPing"
         >
-          🖨️
-        </button>
-      </div>
+          <h1>🚧 fxPrint!</h1>
 
-      <div class="list-wrapper">
-        <h2 style="margin-top: 0">List Printer</h2>
-        <ul id="list-printer" class="item-printer-container"></ul>
-      </div>
+          <div
+            style="
+              position: relative;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 0.5rem;
+              size: 20px;
+              font-size: large;
+            "
+          >
+            <button id="search-ip">🔎</button>
+            <button>⚙️</button>
 
-      <hr />
+            <div class="wrapper-search out">
+              <input
+                type="text"
+                name=""
+                id="input-ip"
+                style="
+                  padding: 0.625rem 0.75rem;
+                  border-radius: 1rem;
+                  outline: transparent;
+                  font-size: 20px;
+                  border: #eaeaea solid 1px;
+                "
+              />
+              <button style="padding: 0.75rem 0.75rem" id="connect-ip">
+                🚀
+              </button>
+              <button style="padding: 0.75rem 0.75rem" id="close-ip">❌</button>
+            </div>
+          </div>
+        </div>
+
+        <p>Your IP Address : <span id="ip-display"></span>.</p>
+        <hr />
+
+        <div
+          class="list-wrapper"
+          style="
+            position: relative;
+            display: flex;
+            gap: 0.5rem;
+            border-radius: 1rem;
+            padding: 1rem;
+          "
+        >
+          <input type="file" id="fileInput" style="width: 100%" />
+          <button
+            style="
+              position: absolute;
+              top: 50%;
+              bottom: 50%;
+              right: 0.5rem;
+              padding: 0.5rem 0.75rem;
+              transform: translate(0, -50%);
+              height: fit-content;
+              border-radius: 1rem;
+              border-color: transparent;
+              background-color: bisque;
+            "
+            id="buttonPing"
+          >
+            🖨️
+          </button>
+        </div>
+
+        <div class="list-wrapper">
+          <h2 style="margin-top: 0">List Printer</h2>
+          <ul id="list-printer" class="item-printer-container"></ul>
+        </div>
+
+        <hr />
+      </div>
     </div>
     <script src="./assets/socket/socket.io.min.js"></script>
     <script src="./assets/utility/printer-status.js"></script>
+    <script src="./assets/tabler-io.js" type="module"></script>
     <script src="./assets/index.js" type="module"></script>
   </body>
 </html>

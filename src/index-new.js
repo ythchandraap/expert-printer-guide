@@ -22,150 +22,140 @@ let printWindow;
 let alternativePrintWindow;
 let requestFrom = null;
 let printName = "";
-let copies = 1;
 
 let tray;
 
 const httpServer = createServer((req, res) => {
   const { method, url, headers, ...rest } = req;
-  try {
-    res.setHeader("Content-Type", "application/json");
-    if (method === "POST" && url === "/connect/print") {
-      const contentType = headers["content-type"];
-      let printDevice = headers["print-device"];
-      copies = parseInt(headers["copies"]) ?? 1;
+  res.setHeader("Content-Type", "application/json");
+  if (method === "POST" && url === "/connect/print") {
+    const contentType = headers["content-type"];
+    const printDevice = headers["print-device"];
 
-      if (!contentType || !contentType.includes("multipart/form-data")) {
-        res.writeHead(400);
-        return res.end(
-          JSON.stringify({ error: "Expected multipart/form-data" })
-        );
+    if (!contentType || !contentType.includes("multipart/form-data")) {
+      res.writeHead(400);
+      return res.end(JSON.stringify({ error: "Expected multipart/form-data" }));
+    }
+
+    const boundary = "--" + contentType.split("boundary=")[1];
+
+    const chunks = [];
+    req.on("data", (chunk) => {
+      chunks.push(chunk); // Binary-safe
+    });
+
+    req.on("end", async () => {
+      requestFrom = "api";
+      const printerName = printDevice;
+      const printers = await mainWindow?.webContents?.getPrintersAsync();
+      const getSpecificPrinter = printers?.find(
+        (item) => item?.name === printerName
+      );
+
+      if (!getSpecificPrinter) {
+        const checkDefault = printers?.find((item) => item?.isDefault == true);
+        if (!checkDefault) {
+          printerName = printers?.[0].name;
+        } else {
+          printerName = checkDefault?.name;
+        }
       }
 
-      const boundary = "--" + contentType.split("boundary=")[1];
+      const buffer = Buffer.concat(chunks); // Full raw body as buffer
 
-      const chunks = [];
-      req.on("data", (chunk) => {
-        chunks.push(chunk); // Binary-safe
-      });
+      // Find file part
+      const parts = buffer.toString().split(boundary);
+      const filePart = parts.find((part) => part.includes("filename="));
+      if (!filePart) {
+        res.writeHead(400);
+        return res.end(JSON.stringify({ error: "No file uploaded" }));
+      }
 
-      req.on("end", async () => {
-        requestFrom = "api";
-        printName = printDevice;
-        const printers = await mainWindow?.webContents?.getPrintersAsync();
-        const getSpecificPrinter = printers?.find(
-          (item) => item?.name === printName
-        );
+      // Extract filename
+      const filenameMatch = filePart.match(/filename="(.+?)"/);
+      const fileName = filenameMatch ? filenameMatch[1] : "file.pdf";
 
-        if (!getSpecificPrinter) {
-          const checkDefault = printers?.find(
-            (item) => item?.isDefault == true
+      // Get raw binary data (cut off headers)
+      const start = buffer.indexOf("\r\n\r\n") + 4;
+      const end = buffer.lastIndexOf(`\r\n${boundary}`) - 2; // before trailing \r\n
+      const fileData = buffer.slice(start, end);
+
+      // Save the file
+
+      const uploadDir = getFilePath();
+
+      const filePath = path.join(uploadDir, fileName);
+      console.log(filePath);
+      printName = printerName;
+
+      // Simpan file
+      writeFile(filePath, fileData, async (err) => {
+        if (err) {
+          console.error("❌ Failed to save file:", err);
+          return res.end(
+            JSON.stringify({ message: "File save failed", data: {} })
           );
-          if (!checkDefault) {
-            printDevice = printers?.[0].name;
-          } else {
-            printDevice = checkDefault?.name;
-          }
         }
 
-        const buffer = Buffer.concat(chunks); // Full raw body as buffer
+        console.log("✅ File saved successfully:", filePath);
 
-        // Find file part
-        const parts = buffer.toString().split(boundary);
-        const filePart = parts.find((part) => part.includes("filename="));
-        if (!filePart) {
-          res.writeHead(400);
-          return res.end(JSON.stringify({ error: "No file uploaded" }));
+        if (!existsSync(filePath)) {
+          console.error("❌ File not found:", filePath);
+          res.writeHead(500);
+          return res.end(
+            JSON.stringify({ message: "File not found", data: {} })
+          );
         }
 
-        // Extract filename
-        const filenameMatch = filePart.match(/filename="(.+?)"/);
-        const fileName = filenameMatch ? filenameMatch[1] : "file.pdf";
-        // Get raw binary data (cut off headers)
-        const start = buffer.indexOf("\r\n\r\n") + 4;
-        const end = buffer.lastIndexOf(`\r\n${boundary}`) - 2; // before trailing \r\n
-        const fileData = buffer.slice(start, end);
+        try {
+          printWindow = new BrowserWindow({
+            width: 800,
+            height: 600,
+            show: true,
+            // process.env.MODE == "DEVELOPMENT" ? true : true,
+            webPreferences: {
+              preload: path.join(__dirname, "preload.js"),
+              nodeIntegration: false,
+              contextIsolation: true,
+            },
+          });
 
-        // Save the file
+          const htmlPath = path.resolve(
+            __dirname,
+            "./renderer/assets/pdf-viewer.html"
+          );
+          console.log(filePath);
 
-        const uploadDir = getFilePath();
+          const fileUrl = `file://${path.join(
+            htmlPath
+          )}?file=${encodeURIComponent(filePath)}`;
 
-        const filePath = path.join(uploadDir, fileName);
+          console.log("🔗 Loading file:", fileUrl);
 
-        // Simpan file
-
-        writeFile(filePath, fileData, async (err) => {
-          if (err) {
-            console.error("❌ Failed to save file:", err);
-            return res.end(
-              JSON.stringify({ message: "File save failed", data: {} })
-            );
-          }
-
-          if (!existsSync(filePath)) {
-            console.error("❌ File not found:", filePath);
-            res.writeHead(500);
-            return res.end(
-              JSON.stringify({ message: "File not found", data: {} })
-            );
-          }
-
-          try {
-            printWindow = new BrowserWindow({
-              width: 800,
-              height: 600,
-              show: false,
-              // process.env.MODE == "DEVELOPMENT" ? true : true,
-              webPreferences: {
-                preload: path.join(__dirname, "preload.js"),
-                nodeIntegration: false,
-                contextIsolation: true,
-              },
-            });
-
-            const htmlPath = path.resolve(
-              __dirname,
-              "./renderer/assets/pdf-viewer.html"
-            );
-
-            const fileUrl = `file://${path.join(
-              htmlPath
-            )}?file=${encodeURIComponent(filePath)}`;
-
-            await printWindow.loadURL(fileUrl);
-            res.writeHead(200);
-            res.end(
-              JSON.stringify({
-                message:
-                  "Print on process, if not appear. Please re-check your printer",
-              })
-            );
-          } catch (printError) {
-            requestFrom = null;
-            console.error("❌ Printing error:", printError);
-            res.writeHead(500);
-            res.end(
-              JSON.stringify({
-                message: "Print failed",
-                error: printError.message,
-              })
-            );
-          }
-        });
+          await printWindow.loadURL(fileUrl);
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              message:
+                "Print on process, if not appear. Please re-check your printer",
+            })
+          );
+        } catch (printError) {
+          requestFrom = null;
+          console.error("❌ Printing error:", printError);
+          res.writeHead(500);
+          res.end(
+            JSON.stringify({
+              message: "Print failed",
+              error: printError.message,
+            })
+          );
+        }
       });
-    } else {
-      res.writeHead(404);
-      res.end(JSON.stringify({ error: "Not found" }));
-    }
-  } catch (error) {
-    console.log(error);
-    res.writeHead(500);
-    res.end(
-      JSON.stringify({
-        message: "Print failed",
-        error: printError.message,
-      })
-    );
+    });
+  } else {
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: "Not found" }));
   }
 });
 
@@ -308,6 +298,8 @@ io.on("connection", (socket) => {
             }
           }
 
+          console.log("✅ File saved successfully:", filePath);
+
           if (!existsSync(filePath)) {
             console.error("❌ File not found:", filePath);
             if (requestFrom == "api") {
@@ -324,7 +316,7 @@ io.on("connection", (socket) => {
             printWindow = new BrowserWindow({
               width: 800,
               height: 600,
-              show: false,
+              show: true,
               // process.env.MODE == "DEVELOPMENT" ? true : true,
               webPreferences: {
                 preload: path.join(__dirname, "preload.js"),
@@ -341,10 +333,12 @@ io.on("connection", (socket) => {
             const fileUrl = `file://${path.join(
               htmlPath
             )}?file=${encodeURIComponent(filePath)}`;
+
+            console.log("🔗 Loading file:", fileUrl);
+
             await printWindow.loadURL(fileUrl);
           } catch (printError) {
             console.error("❌ Printing error:", printError);
-
             if (requestFrom == "api") {
               res.writeHead(500);
               return res.end(
@@ -419,7 +413,7 @@ const createWindow = () => {
     },
   ]);
 
-  tray.setToolTip("fxPrint");
+  tray.setToolTip("Expert Guide Printer");
   tray.setContextMenu(contextMenu);
 
   mainWindow.on("close", (event) => {
@@ -462,6 +456,8 @@ app.whenReady().then(() => {
         availablePrinters.find((p) => p.name === printName) ||
         availablePrinters[0];
 
+      console.log("🖨️ Using printer:", printer?.name ?? "No printer found");
+
       if (!printer) {
         console.error("❌ Printer not found.");
         return;
@@ -469,6 +465,8 @@ app.whenReady().then(() => {
 
       // Print the PDF from the opened viewer
       await printEachCanvas(printWindow, printer.name);
+
+      console.log("✅ Print job completed!");
     } catch (error) {
       console.error("❌ Error in print process:", error);
     }
@@ -497,14 +495,14 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => (willQuitApp = true));
 
 // Function
-
 async function printCanvasForLabelPrinter(printWindow, printerName) {
   const printContainer = printWindow?.webContents;
+  console.log(`🖨️ Printing on label printer: ${printerName}`);
 
-  // Extract canvas data from the print window
+  // Extract canvas data with highest quality
   const pageCanvases = await printContainer.executeJavaScript(`
         [...document.querySelectorAll("canvas")].map(canvas => ({
-            data: canvas.toDataURL("image/png", 1.0), // Use highest quality
+            data: canvas.toDataURL("image/png", 1.0), // Ensure full quality
             width: canvas.width,
             height: canvas.height
         }))
@@ -513,10 +511,10 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
   // Constants for unit conversion
   const INCH = 25.4; // 1 inch = 25.4 mm
   const MICRON_TO_MM = 1000;
-  const originalDPI = 850; // Original high-resolution DPI
-  const targetDPI = 203; // Set printing DPI to 300 for better quality
+  const originalDPI = 850; // Your original high-resolution DPI
+  const targetDPI = 600; // Aim for a very high printing DPI for sharpness
 
-  // Clear the print window and set up styles
+  // Clear and style the print window
   await printContainer.executeJavaScript(`
         document.body.innerHTML = "";
         document.body.style.margin = "0";
@@ -543,71 +541,70 @@ async function printCanvasForLabelPrinter(printWindow, printerName) {
   let originalHeightMM = 0;
   for (const { data, width, height } of pageCanvases) {
     // Convert to mm
-    originalWidthMM = (width * INCH) / originalDPI;
-    originalHeightMM = (height * INCH) / originalDPI;
+    const originalWidthMM = (width * INCH) / originalDPI;
+    const originalHeightMM = (height * INCH) / originalDPI;
 
-    // Adjust pixel size for high DPI printing
-    const highResWidth = ((originalWidthMM * targetDPI) / INCH) * 10;
-    const highResHeight = ((originalHeightMM * targetDPI) / INCH) * 10;
+    // Calculate high-resolution dimensions for the print canvas
+    const highResWidth = Math.round((originalWidthMM * targetDPI) / INCH);
+    const highResHeight = Math.round((originalHeightMM * targetDPI) / INCH);
 
-    // Render high-resolution canvas
     await printContainer.executeJavaScript(`
-        new Promise((resolve, reject) => {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            ctx.textRendering = 'optimizeLegibility';
+            new Promise((resolve, reject) => {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
 
-            // Set high resolution for printing
-            canvas.width = ${highResWidth};
-            canvas.height = ${highResHeight};
-            canvas.style.width = "${originalWidthMM - 2}mm";
-            canvas.style.height = "${originalHeightMM - 2}mm";
-            canvas.style.display = "block";
-            canvas.style.margin = "0";
-            canvas.style.padding = "0";
+                canvas.width = ${highResWidth};
+                canvas.height = ${highResHeight};
+                canvas.style.width = "${originalWidthMM}mm"; // Set physical size
+                canvas.style.height = "${originalHeightMM}mm"; // Set physical size
+                canvas.style.display = "block";
+                canvas.style.margin = "0";
+                canvas.style.padding = "0";
 
-            // Enable high-quality rendering
-            // ctx.imageSmoothingEnabled = true;
-            // ctx.imageSmoothingQuality = "high";
+                const img = new Image();
+                img.onload = () => {
+                    // Set text rendering for potentially sharper text in the image
+                    ctx.textRendering = 'optimizeLegibility'; // Or 'geometricPrecision'
 
-            const img = new Image();
-            img.src = "${data}";
-            img.onload = () => {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                document.body.appendChild(canvas);
-                resolve();
-            };
-            img.onerror = reject;
-        });
-    `);
+                    // Draw the image onto the high-resolution canvas
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    document.body.appendChild(canvas);
+                    resolve();
+                };
+                img.onerror = reject;
+                img.src = "${data}";
+            });
+        `);
   }
 
-  // Print the content with high-resolution settings
+  // Print with high DPI and precise paper size
   requestFrom = null;
+  console.log("label printing with high DPI");
   await printContainer.print({
     silent: true,
     printBackground: false,
     deviceName: printerName,
-    copies: copies,
     pageSize: {
-      width: (originalWidthMM - 2) * MICRON_TO_MM,
-      height: (originalHeightMM - 2) * MICRON_TO_MM,
+      width: Math.round(originalWidthMM * MICRON_TO_MM),
+      height: Math.round(originalHeightMM * MICRON_TO_MM),
     },
     margins: {
-      marginType: "none", // Ensure no extra margins
+      marginType: "none",
     },
-    dpi: targetDPI, // Use 300 DPI for sharper print quality
+    dpi: targetDPI, // Ensure Electron tries to use this DPI
   });
-  copies = 1;
+
+  console.log("✅ High-quality label print completed.");
 }
 
 async function printCanvasForPaperPrinter(printWindow, printerName) {
   const printContainer = printWindow?.webContents;
+  console.log(`🖨️ Printing on paper printer: ${printerName}`);
 
-  // Extract canvas data from the print window
+  // Extract canvas data with highest quality
   const pageCanvases = await printContainer.executeJavaScript(`
         [...document.querySelectorAll("canvas")].map(canvas => ({
-            data: canvas.toDataURL("image/png"),
+            data: canvas.toDataURL("image/png", 1.0), // Ensure full quality
             width: canvas.width,
             height: canvas.height
         }))
@@ -616,10 +613,9 @@ async function printCanvasForPaperPrinter(printWindow, printerName) {
   // Constants for unit conversion
   const INCH = 25.4;
   const MICRON_TO_MM = 1000;
-  const originalDPI = 850;
-  const dpiValue = 203; // Higher DPI for paper printers
+  const originalDPI = 850; // Your original high-resolution DPI
 
-  // Clear the print window and set up styles
+  // Clear and style the print window
   await printContainer.executeJavaScript(`
         document.body.innerHTML = "";
         document.body.style.margin = "0";
@@ -645,63 +641,55 @@ async function printCanvasForPaperPrinter(printWindow, printerName) {
   let originalWidthMM = 0;
   let originalHeightMM = 0;
   for (const { data, width, height } of pageCanvases) {
-    // Convert to mm
-    originalWidthMM = (width * INCH) / originalDPI;
-    originalHeightMM = (height * INCH) / originalDPI;
+    const originalWidthMM = (width * INCH) / originalDPI;
+    const originalHeightMM = (height * INCH) / originalDPI;
 
-    // Adjust pixel size for high DPI printing
-    const highResWidth = (originalWidthMM / INCH) * 10;
-    const highResHeight = (originalHeightMM / INCH) * 10;
-
-    // Render high-resolution canvas
     await printContainer.executeJavaScript(`
-        new Promise((resolve, reject) => {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            ctx.textRendering = 'optimizeLegibility';
+            new Promise((resolve, reject) => {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
 
-            // Set high resolution for printing
-            canvas.width = ${highResWidth};
-            canvas.height = ${highResHeight};
-            canvas.style.width = "${originalWidthMM - 2}mm";
-            canvas.style.height = "${originalHeightMM - 2}mm";
-            canvas.style.display = "block";
-            canvas.style.margin = "0";
-            canvas.style.padding = "0";
+                canvas.width = ${width}; // Use original pixel width
+                canvas.height = ${height}; // Use original pixel height
+                canvas.style.width = "${originalWidthMM}mm"; // Set physical size
+                canvas.style.height = "${originalHeightMM}mm"; // Set physical size
+                canvas.style.display = "block";
+                canvas.style.margin = "0";
+                canvas.style.padding = "0";
 
-            // Enable high-quality rendering
-            // ctx.imageSmoothingEnabled = true;
-            // ctx.imageSmoothingQuality = "high";
+                const img = new Image();
+                img.onload = () => {
+                    // Set text rendering for potentially sharper text in the image
+                    ctx.textRendering = 'optimizeLegibility'; // Or 'geometricPrecision'
 
-            const img = new Image();
-            img.src = "${data}";
-            img.onload = () => {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                document.body.appendChild(canvas);
-                resolve();
-            };
-            img.onerror = reject;
-        });
-    `);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    document.body.appendChild(canvas);
+                    resolve();
+                };
+                img.onerror = reject;
+                img.src = "${data}";
+            });
+        `);
   }
-  // Print the content with the calculated page size
+
+  // Print with original DPI and precise paper size
   requestFrom = null;
+  console.log("paper printing with original DPI");
   await printContainer.print({
-    silent: true, // Allow print dialog for user preferences
+    silent: true, // Consider removing silent for user control
     printBackground: false,
     deviceName: printerName,
-    copies: copies,
     pageSize: {
-      width: originalWidthMM * MICRON_TO_MM,
-      height: originalHeightMM * MICRON_TO_MM,
+      width: Math.round(originalWidthMM * MICRON_TO_MM),
+      height: Math.round(originalHeightMM * MICRON_TO_MM),
     },
     margins: {
-      marginType: "none", // Ensure no extra margins
+      marginType: "none",
     },
-    dpi: originalDPI,
+    dpi: originalDPI, // Attempt to use the original high DPI
   });
 
-  copies = 1;
+  console.log("✅ All pages printed with high quality.");
 }
 
 async function printEachCanvas(printWindow, printerName) {
