@@ -25,14 +25,6 @@
     <h1>📄 PDF Viewer</h1>
     <div id="pdf-container"></div>
 
-    <!-- <script>
-      window.addEventListener("load", () => {
-        setTimeout(() => {
-          window.electronAPI?.printFromViewer?.();
-        }, 500);
-      });
-    </script> -->
-
     <script type="module">
       import * as pdfjsLib from "./build/pdf.mjs";
 
@@ -40,6 +32,7 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc = "./build/pdf.worker.mjs";
 
       document.addEventListener("DOMContentLoaded", async () => {
+        let number = 0;
         const urlParams = new URLSearchParams(window.location.search);
         const pdfUrl = urlParams.get("file");
 
@@ -54,7 +47,6 @@
 
           // Define the desired DPI (e.g., 300 DPI)
           const desiredDPI = 300;
-          const defaultDPI = 92; // PDF.js default DPI
           const inch = 25.4;
 
           let renderPromises = [];
@@ -84,7 +76,7 @@
             canvas.style.width = `${exactWidth}px`;
             canvas.style.height = `${exactHeight}px`;
             canvas.style.display = "block";
-            canvas.style.marginBottom = "10px"; // Add spacing between pages
+            // canvas.style.marginBottom = "10px"; // Add spacing between pages
             canvas.style.backgroundColor = "white"; // Set background color
 
             container.appendChild(canvas);
@@ -98,7 +90,6 @@
             renderPromises.push(renderTask);
           }
           await Promise.all(renderPromises);
-          console.log("✅ All canvases are fully loaded.");
 
           // Now call the Electron API
           window.electronAPI?.printFromViewer?.();
